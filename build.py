@@ -9,13 +9,24 @@ Outputs (in this folder):
 import html
 import os
 
+import base64
+import io
+import math
+import random
+
 import qrcode
-import qrcode.image.svg
+from PIL import Image, ImageDraw
 from qrcode.constants import ERROR_CORRECT_H
 
 BASE_URL = "https://saatvik-nbil.github.io/trivima-prints/"
-QR_MM = 35.0  # printed size of the black QR symbol
+QR_MM = 35.0  # printed size: black symbol (square codes) or circle diameter (circular codes)
 ROOT = os.path.dirname(os.path.abspath(__file__))
+CIRCULAR = {"gummy-np", "spiral", "gyroid"}  # these get the circular badge style
+
+LOGO = Image.open(os.path.join(ROOT, "assets", "nbil-icon.png")).convert("RGBA")
+_buf = io.BytesIO()
+LOGO.resize((400, 400), Image.LANCZOS).save(_buf, "PNG", optimize=True)
+LOGO_B64 = base64.b64encode(_buf.getvalue()).decode()
 
 PRINTS = [
     {
@@ -194,28 +205,143 @@ def build_pages():
         f.write(page("Trivima Print Showcase", inner))
 
 
-def make_qr(url):
-    qr = qrcode.QRCode(error_correction=ERROR_CORRECT_H, border=4, box_size=20)
+def qr_matrix(url):
+    """Module matrix (no quiet zone). Level H so the centre logo is tolerated."""
+    qr = qrcode.QRCode(error_correction=ERROR_CORRECT_H, border=0)
     qr.add_data(url)
     qr.make(fit=True)
-    return qr
+    return qr.version, [list(r) for r in qr.get_matrix()]
+
+
+def logo_size(n):
+    """Odd number of modules for the white logo backing (~27% of symbol width)."""
+    k = round(n * 0.27)
+    return k if k % 2 else k + 1
+
+
+def is_finder(r, c, n):
+    return (r < 7 and c < 7) or (r < 7 and c >= n - 7) or (r >= n - 7 and c < 7)
+
+
+class Canvas:
+    """Draws the same shapes to SVG (vector, for printing) and PIL (PNG)."""
+
+    def __init__(self, size, px_per_module=24):
+        self.size, self.s = size, px_per_module
+        self.svg = []
+        self.im = Image.new("RGB", (round(size * px_per_module),) * 2, "white")
+        self.d = ImageDraw.Draw(self.im)
+
+    def rect(self, x, y, w, h, fill="#000", r=0):
+        self.svg.append(f'<rect x="{x:g}" y="{y:g}" width="{w:g}" height="{h:g}" rx="{r:g}" fill="{fill}"/>')
+        s = self.s
+        box = [x * s, y * s, (x + w) * s - 1, (y + h) * s - 1]
+        if r:
+            self.d.rounded_rectangle(box, radius=r * s, fill=fill)
+        else:
+            self.d.rectangle(box, fill=fill)
+
+    def circle(self, cx, cy, rad, fill="#000"):
+        self.svg.append(f'<circle cx="{cx:g}" cy="{cy:g}" r="{rad:g}" fill="{fill}"/>')
+        s = self.s
+        self.d.ellipse([(cx - rad) * s, (cy - rad) * s, (cx + rad) * s, (cy + rad) * s], fill=fill)
+
+    def ring(self, cx, cy, rad, width, fill="#000"):
+        self.svg.append(f'<circle cx="{cx:g}" cy="{cy:g}" r="{rad:g}" fill="none" stroke="{fill}" stroke-width="{width:g}"/>')
+        s = self.s
+        self.d.ellipse([(cx - rad - width / 2) * s, (cy - rad - width / 2) * s,
+                        (cx + rad + width / 2) * s, (cy + rad + width / 2) * s],
+                       outline=fill, width=max(1, round(width * s)))
+
+    def logo(self, cx, cy, size):
+        x, y = cx - size / 2, cy - size / 2
+        self.svg.append(f'<image x="{x:g}" y="{y:g}" width="{size:g}" height="{size:g}" href="data:image/png;base64,{LOGO_B64}"/>')
+        px = round(size * self.s)
+        icon = LOGO.resize((px, px), Image.LANCZOS)
+        self.im.paste(icon, (round(x * self.s), round(y * self.s)), icon)
+
+    def save(self, base):
+        with open(base + ".svg", "w", encoding="utf-8") as f:
+            f.write(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {self.size:g} {self.size:g}" '
+                    f'shape-rendering="geometricPrecision"><rect width="100%" height="100%" fill="#fff"/>'
+                    + "".join(self.svg) + "</svg>")
+        self.im.save(base + ".png", dpi=(600, 600))
+
+
+def draw_finders(cv, off, n, rounded):
+    r1, r2 = (1.6, 0.9) if rounded else (0, 0)
+    for fr, fc in ((0, 0), (0, n - 7), (n - 7, 0)):
+        x, y = off + fc, off + fr
+        cv.rect(x, y, 7, 7, "#000", r1)
+        cv.rect(x + 1, y + 1, 5, 5, "#fff", r1 * 0.7)
+        cv.rect(x + 2, y + 2, 3, 3, "#000", r2)
+
+
+def square_qr(m, base):
+    """Classic square QR: black symbol + 4-module quiet zone + logo in centre."""
+    n, q = len(m), 4
+    cv = Canvas(n + 2 * q)
+    for r in range(n):
+        for c in range(n):
+            if m[r][c] and not is_finder(r, c, n):
+                cv.rect(q + c, q + r, 1, 1)
+    draw_finders(cv, q, n, rounded=False)
+    k = logo_size(n)
+    mid = q + n / 2
+    cv.rect(mid - k / 2, mid - k / 2, k, k, "#fff", 1.2)
+    cv.logo(mid, mid, k - 1.6)
+    cv.save(base)
+    return QR_MM * (n + 2 * q) / n  # image width so the black symbol is QR_MM
+
+
+def circular_qr(m, base, seed):
+    """Circular badge: dot-style QR inside a circle filled with decorative dots.
+    The whole circle is QR_MM in diameter."""
+    n, gap = len(m), 2
+    inner = n + 2 * gap
+    D = math.ceil(inner * math.sqrt(2)) + 3
+    if (D - n) % 2:
+        D += 1
+    off = (D - n) // 2
+    cv = Canvas(D)
+    c0 = D / 2
+    rng = random.Random(seed)
+    lo, hi = off - gap, off + n + gap
+    for r in range(D):
+        for c in range(D):
+            if lo <= r < hi and lo <= c < hi:
+                continue
+            if math.hypot(c + 0.5 - c0, r + 0.5 - c0) < D / 2 - 1.9 and rng.random() < 0.5:
+                cv.circle(c + 0.5, r + 0.5, 0.42)
+    for r in range(n):
+        for c in range(n):
+            if m[r][c] and not is_finder(r, c, n):
+                cv.circle(off + c + 0.5, off + r + 0.5, 0.46)
+    draw_finders(cv, off, n, rounded=True)
+    cv.ring(c0, c0, D / 2 - 0.35, 0.7)  # outer edge = full diameter
+    k = logo_size(n) + 2
+    cv.circle(c0, c0, k / 2 + 0.3, "#fff")
+    cv.logo(c0, c0, (k + 0.6) * 0.72)
+    cv.save(base)
+    return QR_MM, n * QR_MM / D  # image width, symbol width
 
 
 def build_qr():
     os.makedirs(os.path.join(ROOT, "qr"), exist_ok=True)
     cells = []
-    for p in PRINTS:
-        url = BASE_URL + p["slug"] + ".html"
-        qr = make_qr(url)
-        qr.make_image(fill_color="black", back_color="white").save(
-            os.path.join(ROOT, "qr", p["slug"] + ".png"))
-        qr.make_image(image_factory=qrcode.image.svg.SvgPathFillImage).save(
-            os.path.join(ROOT, "qr", p["slug"] + ".svg"))
-        print(f"{p['slug']:12s} version {qr.version}  {url}")
-        # Size the image so the black symbol (excluding the 4-module white quiet
-        # zone on each side) is exactly QR_MM wide.
-        n = qr.modules_count
-        img_mm = QR_MM * (n + 2 * qr.border) / n
+    for i, p in enumerate(PRINTS):
+        # Extensionless URL (GitHub Pages serves <slug>.html) keeps every code
+        # at version 6, which has no alignment pattern hidden under the logo.
+        url = BASE_URL + p["slug"]
+        version, m = qr_matrix(url)
+        base = os.path.join(ROOT, "qr", p["slug"])
+        if p["slug"] in CIRCULAR:
+            img_mm, sym = circular_qr(m, base, seed=i)
+            shape = f"circle {img_mm:.1f} mm, symbol {sym:.1f} mm"
+        else:
+            img_mm = square_qr(m, base)
+            shape = f"square, symbol {QR_MM:.1f} mm"
+        print(f"{p['slug']:12s} v{version}  {shape:32s} {url}")
         cells.append(
             f'<div class="cell"><img src="qr/{p["slug"]}.svg" alt="" '
             f'style="width:{img_mm:.3f}mm;height:{img_mm:.3f}mm">'
@@ -242,7 +368,7 @@ body{{font:10pt/1.3 system-ui,"Segoe UI",sans-serif;color:#000;-webkit-print-col
 </style></head><body>
 <div class="sheet">
 <div class="grid">{''.join(cells)}</div>
-<div class="ruler"><i></i><span>Check: this bar should measure exactly 3.5 cm, the same as the black square of each QR code.</span></div>
+<div class="ruler"><i></i><span>Check: this bar should measure exactly 3.5 cm &mdash; the black square of each square QR, and the diameter of each circular QR.</span></div>
 </div>
 </body></html>
 """
