@@ -16,10 +16,12 @@ import random
 
 import qrcode
 from PIL import Image, ImageDraw
-from qrcode.constants import ERROR_CORRECT_H
+from qrcode.constants import ERROR_CORRECT_H, ERROR_CORRECT_Q
 
 BASE_URL = "https://saatvik-nbil.github.io/trivima-prints/"
-QR_MM = 35.0  # printed size: black symbol (square codes) or circle diameter (circular codes)
+SHORT_BASE_URL = "HTTPS://SAATVIK-NBIL.GITHUB.IO/trivima-prints/"
+QR_MM = 35.0      # printed size of the black symbol of square codes
+CIRCLE_MM = 20.0  # printed diameter of circular codes
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CIRCULAR = {"gummy-np", "spiral", "gyroid"}  # these get the circular badge style
 
@@ -205,10 +207,10 @@ def build_pages():
         f.write(page("Trivima Print Showcase", inner))
 
 
-def qr_matrix(url):
-    """Module matrix (no quiet zone). Level H so the centre logo is tolerated."""
-    qr = qrcode.QRCode(error_correction=ERROR_CORRECT_H, border=0)
-    qr.add_data(url)
+def qr_matrix(url, ec=ERROR_CORRECT_H, optimize=20):
+    """Module matrix (no quiet zone). H/Q error correction tolerates the centre logo."""
+    qr = qrcode.QRCode(error_correction=ec, border=0)
+    qr.add_data(url, optimize=optimize)
     qr.make(fit=True)
     return qr.version, [list(r) for r in qr.get_matrix()]
 
@@ -296,10 +298,10 @@ def square_qr(m, base):
 
 def circular_qr(m, base, seed):
     """Circular badge: dot-style QR inside a circle filled with decorative dots.
-    The whole circle is QR_MM in diameter."""
-    n, gap = len(m), 2
+    The whole circle is CIRCLE_MM in diameter."""
+    n, gap = len(m), 1
     inner = n + 2 * gap
-    D = math.ceil(inner * math.sqrt(2)) + 3
+    D = math.ceil(inner * math.sqrt(2)) + 1
     if (D - n) % 2:
         D += 1
     off = (D - n) // 2
@@ -311,7 +313,7 @@ def circular_qr(m, base, seed):
         for c in range(D):
             if lo <= r < hi and lo <= c < hi:
                 continue
-            if math.hypot(c + 0.5 - c0, r + 0.5 - c0) < D / 2 - 1.9 and rng.random() < 0.5:
+            if math.hypot(c + 0.5 - c0, r + 0.5 - c0) < D / 2 - 1.6 and rng.random() < 0.5:
                 cv.circle(c + 0.5, r + 0.5, 0.42)
     for r in range(n):
         for c in range(n):
@@ -319,26 +321,30 @@ def circular_qr(m, base, seed):
                 cv.circle(off + c + 0.5, off + r + 0.5, 0.46)
     draw_finders(cv, off, n, rounded=True)
     cv.ring(c0, c0, D / 2 - 0.35, 0.7)  # outer edge = full diameter
-    k = logo_size(n) + 2
+    k = logo_size(n)
     cv.circle(c0, c0, k / 2 + 0.3, "#fff")
-    cv.logo(c0, c0, (k + 0.6) * 0.72)
+    cv.logo(c0, c0, (k + 0.6) * 0.74)
     cv.save(base)
-    return QR_MM, n * QR_MM / D  # image width, symbol width
+    return CIRCLE_MM, n * CIRCLE_MM / D  # image width, symbol width
 
 
 def build_qr():
     os.makedirs(os.path.join(ROOT, "qr"), exist_ok=True)
     cells = []
     for i, p in enumerate(PRINTS):
-        # Extensionless URL (GitHub Pages serves <slug>.html) keeps every code
-        # at version 6, which has no alignment pattern hidden under the logo.
-        url = BASE_URL + p["slug"]
-        version, m = qr_matrix(url)
         base = os.path.join(ROOT, "qr", p["slug"])
         if p["slug"] in CIRCULAR:
+            # 2 cm badge: upper-case host (case-insensitive) + level Q keeps the
+            # code at version 4 (33 modules) so the dots stay ~0.4 mm.
+            url = SHORT_BASE_URL + p["slug"]
+            version, m = qr_matrix(url, ERROR_CORRECT_Q, optimize=3)  # alphanumeric host segment
             img_mm, sym = circular_qr(m, base, seed=i)
             shape = f"circle {img_mm:.1f} mm, symbol {sym:.1f} mm"
         else:
+            # Extensionless URL (GitHub Pages serves <slug>.html) keeps every code
+            # at version 6, which has no alignment pattern hidden under the logo.
+            url = BASE_URL + p["slug"]
+            version, m = qr_matrix(url)
             img_mm = square_qr(m, base)
             shape = f"square, symbol {QR_MM:.1f} mm"
         print(f"{p['slug']:12s} v{version}  {shape:32s} {url}")
@@ -368,7 +374,7 @@ body{{font:10pt/1.3 system-ui,"Segoe UI",sans-serif;color:#000;-webkit-print-col
 </style></head><body>
 <div class="sheet">
 <div class="grid">{''.join(cells)}</div>
-<div class="ruler"><i></i><span>Check: this bar should measure exactly 3.5 cm &mdash; the black square of each square QR, and the diameter of each circular QR.</span></div>
+<div class="ruler"><i></i><span>Check: this bar should measure exactly 3.5 cm &mdash; the black square of each square QR. Circular QRs are 2 cm across.</span></div>
 </div>
 </body></html>
 """
