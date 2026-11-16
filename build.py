@@ -14,6 +14,7 @@ import qrcode.image.svg
 from qrcode.constants import ERROR_CORRECT_H
 
 BASE_URL = "https://saatvik-nbil.github.io/trivima-prints/"
+QR_MM = 35.0  # printed size of the black QR symbol
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 PRINTS = [
@@ -211,8 +212,13 @@ def build_qr():
         qr.make_image(image_factory=qrcode.image.svg.SvgPathFillImage).save(
             os.path.join(ROOT, "qr", p["slug"] + ".svg"))
         print(f"{p['slug']:12s} version {qr.version}  {url}")
+        # Size the image so the black symbol (excluding the 4-module white quiet
+        # zone on each side) is exactly QR_MM wide.
+        n = qr.modules_count
+        img_mm = QR_MM * (n + 2 * qr.border) / n
         cells.append(
-            f'<div class="cell"><img src="qr/{p["slug"]}.svg" alt="">'
+            f'<div class="cell"><img src="qr/{p["slug"]}.svg" alt="" '
+            f'style="width:{img_mm:.3f}mm;height:{img_mm:.3f}mm">'
             f'<div class="t">{html.escape(p["title"])}</div>'
             f'<div class="s">{html.escape(p["platform"])} &middot; {html.escape(p["process"])}</div></div>'
         )
@@ -220,18 +226,24 @@ def build_qr():
     sheet = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Trivima QR Sheet</title>
 <style>
-@page{{size:A4;margin:12mm}}
-body{{margin:0;font:10pt/1.3 system-ui,"Segoe UI",sans-serif;color:#000;background:#fff}}
-.note{{font-size:9pt;color:#555;margin-bottom:6mm}}
-.grid{{display:grid;grid-template-columns:repeat(4,45mm);gap:8mm 4mm;justify-content:center}}
-.cell{{text-align:center;break-inside:avoid;border:0.2mm dashed #bbb;padding:3mm 0}}
-.cell img{{width:35mm;height:35mm;display:block;margin:0 auto 2mm}}
-.t{{font-weight:600;font-size:8.5pt;padding:0 2mm}}
-.s{{font-size:7.5pt;color:#444}}
-@media print{{.note{{display:none}}}}
+/* Content is kept well inside the A4 printable area (about 177 x 205 mm vs. 180 x 267 mm
+   printable with 15 mm margins), so "Fit to page" never needs to shrink it: QRs stay 35 mm. */
+@page{{size:A4 portrait;margin:15mm}}
+html,body{{margin:0;padding:0;background:#fff}}
+body{{font:10pt/1.3 system-ui,"Segoe UI",sans-serif;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+.sheet{{width:178mm;margin:0 auto}}
+.grid{{display:grid;grid-template-columns:repeat(4,42mm);gap:5mm 3mm}}
+.cell{{text-align:center;break-inside:avoid;border:0.2mm dashed #bbb;padding:1.5mm 0;height:62mm;box-sizing:border-box;overflow:hidden}}
+.cell img{{max-width:none;display:block;margin:0 auto 1mm}}
+.t{{font-weight:600;font-size:8pt;line-height:1.2;padding:0 1.5mm}}
+.s{{font-size:7pt;color:#444;margin-top:0.5mm}}
+.ruler{{margin-top:6mm;font-size:7.5pt;color:#444;display:flex;align-items:center;gap:3mm}}
+.ruler i{{display:block;width:35mm;height:2.5mm;border:0.3mm solid #000;border-top:0;box-sizing:border-box}}
 </style></head><body>
-<div class="note">Print at 100% / "Actual size" (not "Fit to page") so each QR is exactly 3.5 cm &times; 3.5 cm. Dashed lines are cut guides.</div>
+<div class="sheet">
 <div class="grid">{''.join(cells)}</div>
+<div class="ruler"><i></i><span>Check: this bar should measure exactly 3.5 cm, the same as the black square of each QR code.</span></div>
+</div>
 </body></html>
 """
     with open(os.path.join(ROOT, "qr-sheet.html"), "w", encoding="utf-8") as f:
