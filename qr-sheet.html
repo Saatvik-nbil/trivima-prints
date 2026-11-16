@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Trivima QR Sheet</title>
+<style>
+@page{size:A4;margin:12mm}
+body{margin:0;font:10pt/1.3 system-ui,"Segoe UI",sans-serif;color:#000;background:#fff}
+.note{font-size:9pt;color:#555;margin-bottom:6mm}
+.grid{display:grid;grid-template-columns:repeat(4,45mm);gap:8mm 4mm;justify-content:center}
+.cell{text-align:center;break-inside:avoid;border:0.2mm dashed #bbb;padding:3mm 0}
+.cell img{width:35mm;height:35mm;display:block;margin:0 auto 2mm}
+.t{font-weight:600;font-size:8.5pt;padding:0 2mm}
+.s{font-size:7.5pt;color:#444}
+@media print{.note{display:none}}
+</style></head><body>
+<div class="note">Print at 100% / "Actual size" (not "Fit to page") so each QR is exactly 3.5 cm &times; 3.5 cm. Dashed lines are cut guides.</div>
+<div class="grid"><div class="cell"><img src="qr/gummy-dlp.svg" alt=""><div class="t">Gummy Bear (Medicated Gummy)</div><div class="s">Trivima Aura &middot; DLP</div></div><div class="cell"><img src="qr/ear.svg" alt=""><div class="t">Human Ear</div><div class="s">Trivima Aura &middot; DLP</div></div><div class="cell"><img src="qr/grid.svg" alt=""><div class="t">Precise Grid Structure</div><div class="s">Trivima Aura &middot; DLP</div></div><div class="cell"><img src="qr/cornea.svg" alt=""><div class="t">Cornea</div><div class="s">Trivima Aura &middot; DLP</div></div><div class="cell"><img src="qr/nbil-chip.svg" alt=""><div class="t">“NBIL” Microfluidic Chip</div><div class="s">Trivima Aura &middot; DLP</div></div><div class="cell"><img src="qr/branch-chip.svg" alt=""><div class="t">Interconnected Branching Microchip</div><div class="s">Trivima Aura &middot; DLP</div></div><div class="cell"><img src="qr/gyroid.svg" alt=""><div class="t">Spherical Gyroid</div><div class="s">Trivima Pro &middot; Extrusion · FRESH</div></div><div class="cell"><img src="qr/gummy-np.svg" alt=""><div class="t">Gummy Bear</div><div class="s">Trivima NP &middot; Extrusion</div></div><div class="cell"><img src="qr/spiral.svg" alt=""><div class="t">Spiral / Spring</div><div class="s">Trivima Pro &middot; Extrusion · FRESH</div></div><div class="cell"><img src="qr/tooth.svg" alt=""><div class="t">Wisdom Tooth Crown</div><div class="s">Trivima NP &middot; Extrusion</div></div><div class="cell"><img src="qr/btcp-grid.svg" alt=""><div class="t">β-TCP Stacked Grid</div><div class="s">Trivima Pro &middot; Melt Extrusion</div></div></div>
+</body></html>
